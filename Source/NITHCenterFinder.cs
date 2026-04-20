@@ -6,13 +6,26 @@ using Verse;
 
 namespace NITH
 {
+    public enum CenterFindResult
+    {
+        Found,      // valid open-sky center returned
+        TooSmall,   // open sky exists but not enough for the raid — use EdgeWalkIn
+        NoOpenSky,  // no valid landing cells anywhere on the map — use EdgeWalkIn, then vanilla
+    }
+
     /// <summary>
     /// Finds a valid drop pod raid center restricted to open sky.
     ///
     /// Pass 1 — vanilla-style proximity: 300 random attempts near colony pawns.
     /// Pass 2 — broad map sample: requires enough open area for the estimated raid size.
     /// Pass 3 — broad map sample: no area requirement; any open-sky cell near the colony.
-    /// Pass 4 — no open sky exists anywhere; caller falls back to EdgeDrop.
+    /// Pass 4 — exhaustive: all map cells in random order.
+    ///   If valid cells found but fewer than estimatedPawns → TooSmall.
+    ///   If no valid cells at all → NoOpenSky.
+    ///
+    /// All cell validity checks use CanPhysicallyDropInto consistently.
+    /// The 21x21 area count window uses roofGrid directly for performance since it is
+    /// called many times per pass and roof status is the only meaningful criterion there.
     /// </summary>
     public static class NITHCenterFinder
     {
@@ -30,7 +43,9 @@ namespace NITH
 
         /// <summary>
         /// Counts open-sky cells in the 21x21 square centered on <paramref name="center"/>.
-        /// Uses roofGrid directly rather than CanPhysicallyDropInto for performance.
+        /// Uses roofGrid directly for performance — called many times per pass.
+        /// Intentionally an approximation: walls inside the window are not excluded,
+        /// but this is acceptable for the purpose of selecting a landing area center.
         /// </summary>
         public static int CountOpenSkyCells(IntVec3 center, Map map)
         {
@@ -45,22 +60,39 @@ namespace NITH
         }
 
         /// <summary>
-        /// Returns a valid open-sky center cell, or IntVec3.Invalid if none exists (Pass 4).
+        /// Counts all valid landing cells on the entire map using CanPhysicallyDropInto.
+        /// Only called from the exhaustive pass — acceptable cost on a rare path.
+        /// Uses the same criterion as FindAnyOpenCell for consistency.
         /// </summary>
-        public static IntVec3 FindCenter(Map map, float raidPoints)
+        private static int CountAllValidCells(Map map)
+        {
+            int count = 0;
+            foreach (IntVec3 cell in map.AllCells)
+            {
+                if (DropCellFinder.CanPhysicallyDropInto(cell, map, canRoofPunch: true))
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Main entry point. Returns the result type and sets <paramref name="center"/>
+        /// to a valid cell on Found, or IntVec3.Invalid on TooSmall / NoOpenSky.
+        /// </summary>
+        public static CenterFindResult FindCenter(Map map, float raidPoints, out IntVec3 center)
         {
             int estimatedPawns = EstimatedPawnCount(raidPoints);
 
-            IntVec3 result = TryPass1(map, estimatedPawns);
-            if (result.IsValid) return result;
+            center = TryPass1(map, estimatedPawns);
+            if (center.IsValid) return CenterFindResult.Found;
 
-            result = TryBroadSample(map, estimatedPawns, requireArea: true);
-            if (result.IsValid) return result;
+            center = TryBroadSample(map, estimatedPawns, requireArea: true);
+            if (center.IsValid) return CenterFindResult.Found;
 
-            result = TryBroadSample(map, estimatedPawns, requireArea: false);
-            if (result.IsValid) return result;
+            center = TryBroadSample(map, estimatedPawns, requireArea: false);
+            if (center.IsValid) return CenterFindResult.Found;
 
-            return IntVec3.Invalid; // Pass 4
+            return TryExhaustive(map, estimatedPawns, out center);
         }
 
         // --- Pass 1 ---
@@ -118,11 +150,11 @@ namespace NITH
                 return fallback;
             }
 
-            int   earlyExitDistSq = NITHMod.Settings.earlyExitDistanceTiles * NITHMod.Settings.earlyExitDistanceTiles;
-            int   limit           = NITHMod.Settings.pass2CandidateLimit;
-            IntVec3 bestSpot      = IntVec3.Invalid;
-            float   bestDistSq    = float.MaxValue;
-            int     evaluated     = 0;
+            int     earlyExitDistSq = NITHMod.Settings.earlyExitDistanceTiles * NITHMod.Settings.earlyExitDistanceTiles;
+            int     limit           = NITHMod.Settings.pass2CandidateLimit;
+            IntVec3 bestSpot        = IntVec3.Invalid;
+            float   bestDistSq      = float.MaxValue;
+            int     evaluated       = 0;
 
             foreach (IntVec3 candidate in tmpCandidates)
             {
@@ -142,6 +174,43 @@ namespace NITH
             tmpCandidates.Clear();
             tmpPawns.Clear();
             return bestSpot;
+        }
+
+        // --- Pass 4 — exhaustive ---
+
+        private static CenterFindResult TryExhaustive(Map map, int estimatedPawns, out IntVec3 center)
+        {
+            // Count valid landing cells using the same criterion as FindAnyOpenCell.
+            int totalValidCells = CountAllValidCells(map);
+
+            if (totalValidCells == 0)
+            {
+                center = IntVec3.Invalid;
+                return CenterFindResult.NoOpenSky;
+            }
+
+            // Find a center regardless of whether we return Found or TooSmall —
+            // the caller may still want a best-effort cell for TooSmall.
+            center = FindAnyOpenCell(map);
+
+            if (totalValidCells < estimatedPawns)
+                return CenterFindResult.TooSmall;
+
+            return center.IsValid ? CenterFindResult.Found : CenterFindResult.NoOpenSky;
+        }
+
+        /// <summary>
+        /// Returns a random valid landing cell from a shuffled full-map scan.
+        /// Uses CanPhysicallyDropInto — consistent with CountAllValidCells.
+        /// </summary>
+        private static IntVec3 FindAnyOpenCell(Map map)
+        {
+            foreach (IntVec3 cell in map.AllCells.InRandomOrder())
+            {
+                if (DropCellFinder.CanPhysicallyDropInto(cell, map, canRoofPunch: true))
+                    return cell;
+            }
+            return IntVec3.Invalid;
         }
 
         // --- Helpers ---
