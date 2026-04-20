@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using HarmonyLib;
 using RimWorld;
-using Verse;
 
 namespace NITH.Patches
 {
@@ -23,7 +21,7 @@ namespace NITH.Patches
         public static Exception Finalizer(Exception __exception)
         {
             NITH_State.BypassPodPlacement = false;
-            return __exception; // rethrow if any
+            return __exception;
         }
     }
 }

@@ -18,7 +18,7 @@ namespace NITH
         /// pass all cells through unchanged, allowing pods to land on any non-thick-roof cell.
         /// Set for the duration of Arrive() during a vanilla fallback raid — i.e. when the
         /// map is fully sealed and vanilla roof-punching is the only way to get the raid in.
-        /// Cleared by Patch 4 (Arrive postfix) after pod placement completes.
+        /// Cleared by Patch 4 (Arrive finalizer) after pod placement completes.
         /// </summary>
         public static bool BypassPodPlacement = false;
     }
