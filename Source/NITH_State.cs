@@ -8,11 +8,18 @@ namespace NITH
     {
         /// <summary>
         /// When true, Patch 1 (CanPhysicallyDropInto) passes all cells through unchanged.
-        /// Set only during the last-ditch vanilla fallback in Patch 2 when every NITH
-        /// path has failed — allows vanilla center-finding to punch through roofs as a
-        /// final resort rather than silently losing the raid.
+        /// Set only during VanillaFallback center-finding in Patch 2.
         /// Must always be cleared in a finally block.
         /// </summary>
         public static bool BypassRoofCheck = false;
+
+        /// <summary>
+        /// When true, both Patch 1 (CanPhysicallyDropInto) and Patch 3 (fallback lambda)
+        /// pass all cells through unchanged, allowing pods to land on any non-thick-roof cell.
+        /// Set for the duration of Arrive() during a vanilla fallback raid — i.e. when the
+        /// map is fully sealed and vanilla roof-punching is the only way to get the raid in.
+        /// Cleared by Patch 4 (Arrive postfix) after pod placement completes.
+        /// </summary>
+        public static bool BypassPodPlacement = false;
     }
 }

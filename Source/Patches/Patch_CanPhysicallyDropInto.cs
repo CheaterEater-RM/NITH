@@ -12,8 +12,7 @@ namespace NITH.Patches
     /// Covers all per-pawn landing cell searches automatically since every search
     /// path calls CanPhysicallyDropInto.
     ///
-    /// Bypassed when NITH_State.BypassRoofCheck is true — set only during the
-    /// last-ditch vanilla fallback when every NITH path has failed.
+    /// Bypassed when BypassRoofCheck or BypassPodPlacement is true.
     /// </summary>
     [HarmonyPatch(typeof(DropCellFinder), nameof(DropCellFinder.CanPhysicallyDropInto))]
     public static class Patch_CanPhysicallyDropInto
@@ -22,6 +21,7 @@ namespace NITH.Patches
         {
             if (!__result) return;
             if (NITH_State.BypassRoofCheck) return;
+            if (NITH_State.BypassPodPlacement) return;
 
             if (c.GetRoof(map) != null)
                 __result = false;

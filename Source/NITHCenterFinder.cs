@@ -26,6 +26,13 @@ namespace NITH
     /// All cell validity checks use CanPhysicallyDropInto consistently.
     /// The 21x21 area count window uses roofGrid directly for performance since it is
     /// called many times per pass and roof status is the only meaningful criterion there.
+    ///
+    /// Passes 2/3 intentionally pre-filter out all roofed cells before calling
+    /// CanPhysicallyDropInto. Although CanPhysicallyDropInto is called with
+    /// canRoofPunch: true (to reuse vanilla's other validity checks), NITH only wants
+    /// open-sky centers — thin-roof cells would be rejected by Patch 1 during pod
+    /// placement anyway. The pre-filter also improves sampling efficiency on
+    /// nearly-fully-roofed maps.
     /// </summary>
     public static class NITHCenterFinder
     {
@@ -124,11 +131,18 @@ namespace NITH
         private static IntVec3 TryBroadSample(Map map, int estimatedPawns, bool requireArea)
         {
             int sampleCount = Math.Max(map.Size.x * map.Size.z / NITHMod.Settings.pass2SampleDivisor, 1000);
+            var roofGrid    = map.roofGrid;
 
             tmpCandidates.Clear();
             for (int i = 0; i < sampleCount; i++)
             {
                 IntVec3 cell = CellFinder.RandomCell(map);
+
+                // Intentionally skip all roofed cells — NITH only wants open-sky centers.
+                // CanPhysicallyDropInto is called with canRoofPunch: true below only to
+                // reuse vanilla's other validity checks (walkable, not water, not vacuum).
+                if (roofGrid.Roofed(cell)) continue;
+
                 if (!DropCellFinder.CanPhysicallyDropInto(cell, map, canRoofPunch: true)) continue;
                 if (cell.Fogged(map)) continue;
                 if (requireArea && CountOpenSkyCells(cell, map) < estimatedPawns) continue;
@@ -180,7 +194,6 @@ namespace NITH
 
         private static CenterFindResult TryExhaustive(Map map, int estimatedPawns, out IntVec3 center)
         {
-            // Count valid landing cells using the same criterion as FindAnyOpenCell.
             int totalValidCells = CountAllValidCells(map);
 
             if (totalValidCells == 0)
@@ -189,8 +202,6 @@ namespace NITH
                 return CenterFindResult.NoOpenSky;
             }
 
-            // Find a center regardless of whether we return Found or TooSmall —
-            // the caller may still want a best-effort cell for TooSmall.
             center = FindAnyOpenCell(map);
 
             if (totalValidCells < estimatedPawns)

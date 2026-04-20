@@ -10,10 +10,12 @@ namespace NITH.Patches
     /// Replaces vanilla center-finding with NITH's 4-pass open-sky algorithm.
     ///
     /// Decision tree:
-    ///   Found     → center drop in open sky (normal NITH behavior)
-    ///   TooSmall  → EdgeWalkIn (open sky exists but too small for the full raid)
-    ///   NoOpenSky → EdgeWalkIn; if that also fails → vanilla center drop with roof-punch
-    ///               bypass (last-ditch: better a roof-punching raid than no raid at all)
+    ///   Found             → center drop in open sky (normal NITH behavior)
+    ///   TooSmall/NoOpenSky → EdgeWalkIn; if that fails → VanillaFallback
+    ///
+    /// VanillaFallback sets BypassPodPlacement so the subsequent Arrive call also
+    /// bypasses roof checks, allowing pods to land on thin roofs as a last resort.
+    /// BypassPodPlacement is cleared by Patch 4 (Arrive postfix) after pods drop.
     ///
     /// Pre-assigned centers (quest-scripted raids) are left untouched.
     /// BypassRoofCheck guard prevents re-entry during the vanilla fallback.
@@ -49,9 +51,6 @@ namespace NITH.Patches
                     return false;
 
                 case CenterFindResult.TooSmall:
-                    __result = TryEdgeWalkIn(parms);
-                    return false;
-
                 case CenterFindResult.NoOpenSky:
                 default:
                     if (TryEdgeWalkIn(parms))
@@ -64,10 +63,6 @@ namespace NITH.Patches
             }
         }
 
-        /// <summary>
-        /// Switches the raid to EdgeWalkIn and resolves its spawn center.
-        /// Returns true if EdgeWalkIn found a valid spawn center.
-        /// </summary>
         private static bool TryEdgeWalkIn(IncidentParms parms)
         {
             parms.raidArrivalMode = PawnsArrivalModeDefOf.EdgeWalkIn;
@@ -75,9 +70,9 @@ namespace NITH.Patches
         }
 
         /// <summary>
-        /// Last-ditch fallback: runs vanilla TryResolveRaidSpawnCenter with roof checks
-        /// bypassed. Raiders will punch through roofs as in unmodded RimWorld.
-        /// BypassRoofCheck prevents our prefix from intercepting the re-entrant call.
+        /// Last-ditch fallback: finds a center with roof checks bypassed, then sets
+        /// BypassPodPlacement so the subsequent Arrive call can also land pods anywhere.
+        /// BypassPodPlacement is cleared by Patch 4 (Arrive postfix) after pods drop.
         /// </summary>
         private static void VanillaFallback(ref bool __result, IncidentParms parms)
         {
@@ -91,6 +86,11 @@ namespace NITH.Patches
             {
                 NITH_State.BypassRoofCheck = false;
             }
+
+            // If center-finding succeeded, set BypassPodPlacement so Arrive can also
+            // land pods on roofed cells. Cleared by Patch 4 after Arrive completes.
+            if (__result)
+                NITH_State.BypassPodPlacement = true;
         }
     }
 }

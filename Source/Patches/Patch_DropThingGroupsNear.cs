@@ -13,6 +13,8 @@ namespace NITH.Patches
     /// This predicate permits thin roofs. We postfix the compiled lambda to additionally
     /// reject any roofed cell, keeping the fallback consistent with Patch 1.
     ///
+    /// Bypassed when BypassPodPlacement is true (vanilla fallback raid on sealed map).
+    ///
     /// The lambda is a method on a compiler-generated display class; map is a captured
     /// field accessed via Traverse.
     /// </summary>
@@ -40,6 +42,7 @@ namespace NITH.Patches
         static void Postfix(object __instance, IntVec3 c, ref bool __result)
         {
             if (!__result) return;
+            if (NITH_State.BypassPodPlacement) return;
 
             Map map = Traverse.Create(__instance).Field<Map>("map").Value;
             if (map == null) return;
